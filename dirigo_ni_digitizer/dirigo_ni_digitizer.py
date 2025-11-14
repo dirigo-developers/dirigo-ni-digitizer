@@ -673,7 +673,7 @@ class NIAcquire(digitizer.Acquire):
                 task = nidaqmx.Task(f"Edge counter input {x}")
 
                 ci_chan = task.ci_channels.add_ci_count_edges_chan(
-                    counter=CounterRegistry.allocate_counter(),
+                    counter=CounterRegistry.allocate_counter(self._device.name),
                 )
                 ci_chan.ci_count_edges_term = channel.channel_name
 
