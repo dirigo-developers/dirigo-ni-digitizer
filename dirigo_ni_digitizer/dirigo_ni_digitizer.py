@@ -472,6 +472,7 @@ class NIAcquire(digitizer.Acquire):
                  sample_clock: NISampleClock, 
                  channels: tuple[NIAnalogChannel, ...] | tuple[NICounterChannel, ...], 
                  trigger: NITrigger):
+        super().__init__()
         self._device = device
         self._channels: tuple[NIAnalogChannel, ...] | tuple[NICounterChannel, ...] = channels
         self._sample_clock: NISampleClock = sample_clock
@@ -484,8 +485,6 @@ class NIAcquire(digitizer.Acquire):
         self._records_per_buffer: int | None = None     
         self._buffers_per_acquisition: int | None = None
         self._buffers_allocated: int | None = None
-
-        self._timestamps_enabled = False
 
         # NI Tasks & state:
         self._tasks: list[nidaqmx.Task] = []
@@ -512,7 +511,7 @@ class NIAcquire(digitizer.Acquire):
 
     @property
     def post_trigger_delay_step(self):
-        return None # no trigger delay with NI
+        return 1
     
     @property
     def record_length(self) -> int:
@@ -578,7 +577,7 @@ class NIAcquire(digitizer.Acquire):
 
     @property
     def timestamps_enabled(self) -> bool:
-        return self._timestamps_enabled
+        return False
 
     @timestamps_enabled.setter
     def timestamps_enabled(self, enable: bool):
@@ -586,7 +585,6 @@ class NIAcquire(digitizer.Acquire):
         # precisely synched to AO, there is no need for timestamps
         if enable is True:
             raise ValueError("NI digitizer not compatible with timestamps")
-        self._timestamps_enabled = enable
 
     def start(self):
         # NI digitizer is typically started after scanners/AO (opposite of 
@@ -618,9 +616,9 @@ class NIAcquire(digitizer.Acquire):
                     continue
                 
                 ai_channel = task.ai_channels.add_ai_voltage_chan(
-                    physical_channel=channel.channel_name,
-                    min_val=channel.input_range.min,
-                    max_val=channel.input_range.max,
+                    physical_channel = channel.channel_name,
+                    min_val          = channel.input_range.min,
+                    max_val          = channel.input_range.max,
                 )
 
                 if channel.coupling == digitizer.ChannelCoupling.DC:
@@ -651,7 +649,7 @@ class NIAcquire(digitizer.Acquire):
                 source          = source, 
                 active_edge     = edge,
                 sample_mode     = sample_mode,
-                samps_per_chan  = 2 * samples_per_chan # TODO, not sure about 2x
+                samps_per_chan  = samples_per_chan
             )            
 
             # Make a preallocated array
@@ -705,6 +703,7 @@ class NIAcquire(digitizer.Acquire):
         )
 
         # Start the task(s)
+        self._active.set()
         for task in self._tasks:
             task.start()
 
@@ -719,15 +718,15 @@ class NIAcquire(digitizer.Acquire):
         Reads the next chunk of data from the device buffer. For NI, this typically 
         means calling read once we have enough samples. 
         """
-        if not self._started:
+        if not self._active.is_set():
             raise RuntimeError("Acquisition not started.")
         
         if self._input_mode == digitizer.InputMode.ANALOG:
             reader = cast(AnalogUnscaledReader, self._readers[0])
             Ny, Ns, Nc = acq_product.data.shape
             reader.read_int16(
-                data=self._prealloc,
-                number_of_samples_per_channel=Ny*Ns
+                data                          = self._prealloc,
+                number_of_samples_per_channel = Ny * Ns
             )
             acq_product.data[...] = np.moveaxis(self._prealloc.reshape(Nc, Ny, Ns), 0, -1)
 
@@ -744,8 +743,8 @@ class NIAcquire(digitizer.Acquire):
             
             for i, reader in enumerate(readers):
                 reader.read_many_sample_uint32(
-                    data=data_single_channel,
-                    number_of_samples_per_channel=nsamples
+                    data                          = data_single_channel,
+                    number_of_samples_per_channel = nsamples
                 )
                 data_multiple_channels[1:,i] = data_single_channel
 
@@ -759,7 +758,7 @@ class NIAcquire(digitizer.Acquire):
         self._buffers_acquired += 1
 
     def stop(self):
-        if not self._started:
+        if not self._active.is_set():
             return
 
         # Stop the task(s)
@@ -768,8 +767,10 @@ class NIAcquire(digitizer.Acquire):
             if self._input_mode == digitizer.InputMode.EDGE_COUNTING:
                 CounterRegistry.free_counter(task.channel_names[0])
             task.close()
+        self._active.clear()
+        self._tasks.clear()
+        self._readers.clear()
                 
-        self._started = False
         self._ready = False
         self._samples_acquired = 0
 
@@ -847,16 +848,23 @@ class NIDigitizer(digitizer.Digitizer):
     def data_range(self) -> units.IntRange:
         """Range of the returned data."""
         if self.input_mode == digitizer.InputMode.ANALOG:
-            # Make dummy task to get at the .ai_resolution property
-            with nidaqmx.Task("AI dummy") as task:
-                channel = task.ai_channels.add_ai_voltage_chan(
-                    physical_channel=self._device.ai_physical_chans.channel_names[0]
-                )
-                N = int(channel.ai_resolution)
+            N = self.bit_depth
             return units.IntRange(min=-2**N//2, max=2**N//2 - 1)
         else:
             # For edge counting, use uint8 (max 256 edges/photons per pixel)
             # technically the counters support up to 32 bits, but it's unlikely
             # anyone will need this range
             return units.IntRange(min=0, max=2**8 - 1)
+        
+    @cached_property
+    def bit_depth(self) -> int:
+        if self.input_mode == digitizer.InputMode.ANALOG:
+            with nidaqmx.Task("AI dummy") as task:
+                # Make dummy task to get at the .ai_resolution property
+                channel = task.ai_channels.add_ai_voltage_chan(
+                    physical_channel=self._device.ai_physical_chans.channel_names[0]
+                )
+                return int(channel.ai_resolution)
+        else: # edge counting
+            return 8 # the max we are imposing by using uint8 data
     
