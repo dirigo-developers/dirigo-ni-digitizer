@@ -20,22 +20,6 @@ from dirigo.plugins.scanners import (
 
 
 
-def get_max_ai_rate(device: nidaqmx.system.Device, channels_enabled: int = 1) -> units.SampleRate:
-    if not isinstance(channels_enabled, int):
-        raise ValueError("channels_enabled must be integer")
-    if channels_enabled > 1:
-        aggregate_rate = units.SampleRate(device.ai_max_multi_chan_rate)
-        return aggregate_rate / channels_enabled
-    elif channels_enabled == 1:
-        return units.SampleRate(device.ai_max_single_chan_rate)
-    else:
-        raise ValueError("channels_enabled must be > 1")
-        
-    
-def get_min_ai_rate(device: nidaqmx.system.Device) -> units.SampleRate:
-    return units.SampleRate(device.ai_min_rate)
-
-
 class NIAnalogChannel(digitizer.Channel):
     """
     Represents a single analog input channel on an NI board.
@@ -321,14 +305,14 @@ class NISampleClock(digitizer.SampleClock):
                 # For X-series analog sampling, sample rate is dependent on number of channels enabled
                 nchannels_enabled = sum([channel.enabled for channel in self._channels])
                 return units.SampleRateRange(
-                    min=get_min_ai_rate(self._device), 
-                    max=get_max_ai_rate(self._device, nchannels_enabled)
+                    min=self._min_ai_rate(self._device), 
+                    max=self._max_ai_rate(self._device, nchannels_enabled)
                 )
             elif self._device.product_category == ProductCategory.S_SERIES_DAQ:
                 # For S-series (Simultaneous sampling), sample rate is independent of number channels activated
                 return units.SampleRateRange(
-                    min=get_min_ai_rate(self._device), 
-                    max=get_max_ai_rate(self._device)
+                    min=self._min_ai_rate(self._device), 
+                    max=self._max_ai_rate(self._device)
                 )
             else:
                 raise RuntimeError(f"Unsupported product category: {self._device.product_category}")
@@ -338,7 +322,21 @@ class NISampleClock(digitizer.SampleClock):
                 min=get_min_ao_rate(self._device), 
                 max=get_max_ao_rate(self._device)
             )
-
+        
+    def _max_ai_rate(self, channels_enabled: int = 1) -> units.SampleRate:
+        if not isinstance(channels_enabled, int):
+            raise ValueError("channels_enabled must be integer")
+        if channels_enabled > 1:
+            aggregate_rate = units.SampleRate(self._device.ai_max_multi_chan_rate)
+            return aggregate_rate / channels_enabled
+        elif channels_enabled == 1:
+            return units.SampleRate(self._device.ai_max_single_chan_rate)
+        else:
+            raise ValueError("channels_enabled must be > 1")
+        
+    def _min_ai_rate(self) -> units.SampleRate:
+        return units.SampleRate(self._device.ai_min_rate)
+    
     @property
     def edge(self) -> str:
         return self._edge
