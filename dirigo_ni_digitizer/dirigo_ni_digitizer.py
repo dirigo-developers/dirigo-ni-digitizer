@@ -305,14 +305,14 @@ class NISampleClock(digitizer.SampleClock):
                 # For X-series analog sampling, sample rate is dependent on number of channels enabled
                 nchannels_enabled = sum([channel.enabled for channel in self._channels])
                 return units.SampleRateRange(
-                    min=self._min_ai_rate(self._device), 
-                    max=self._max_ai_rate(self._device, nchannels_enabled)
+                    min=self._min_ai_rate(), 
+                    max=self._max_ai_rate(nchannels_enabled)
                 )
             elif self._device.product_category == ProductCategory.S_SERIES_DAQ:
                 # For S-series (Simultaneous sampling), sample rate is independent of number channels activated
                 return units.SampleRateRange(
-                    min=self._min_ai_rate(self._device), 
-                    max=self._max_ai_rate(self._device)
+                    min=self._min_ai_rate(), 
+                    max=self._max_ai_rate()
                 )
             else:
                 raise RuntimeError(f"Unsupported product category: {self._device.product_category}")
