@@ -575,14 +575,14 @@ class NIAcquire(digitizer.Acquire):
 
     @property
     def timestamps_enabled(self) -> bool:
-        return False
+        return self._timestamps_enabled
 
     @timestamps_enabled.setter
     def timestamps_enabled(self, enable: bool):
-        # Since NI X-series mostly powers galvo-galvo workflows where AI can be
-        # precisely synched to AO, there is no need for timestamps
-        if enable is True:
-            raise ValueError("NI digitizer not compatible with timestamps")
+        if not isinstance(enable, bool):
+            raise ValueError(f"Invalid type for property timestamps_enabled, "
+                             f"got {enable} (type {type(enable)})")
+        self._timestamps_enabled = enable
 
     def start(self):
         # NI digitizer is typically started after scanners/AO (opposite of 
@@ -700,6 +700,11 @@ class NIAcquire(digitizer.Acquire):
             dtype=np.int8
         )
 
+        self._base_timestamps = np.arange(self.records_per_buffer) \
+            * self.record_length / self._sample_clock.rate
+        self._buffer_period = self.records_per_buffer \
+            * self.record_length / self._sample_clock.rate
+
         # Start the task(s)
         self._active.set()
         for task in self._tasks:
@@ -719,6 +724,7 @@ class NIAcquire(digitizer.Acquire):
         if not self._active.is_set():
             raise RuntimeError("Acquisition not started.")
         
+        # --- ANALOG MODE ---
         if self._input_mode == digitizer.InputMode.ANALOG:
             reader = cast(AnalogUnscaledReader, self._readers[0])
             Ny, Ns, Nc = acq_product.data.shape
@@ -728,7 +734,8 @@ class NIAcquire(digitizer.Acquire):
             )
             acq_product.data[...] = np.moveaxis(self._prealloc.reshape(Nc, Ny, Ns), 0, -1)
 
-        else: # Edge counting mode
+        # --- EDGE COUNTING MODE ---
+        else: 
             readers = cast(list[CounterReader], self._readers)
             # Decide how many samples to read each time. 
             nsamples = self.records_per_buffer * self.record_length
@@ -752,6 +759,11 @@ class NIAcquire(digitizer.Acquire):
             self._last_samples = data_multiple_channels[-1,:]
             data.shape = (self.records_per_buffer, self.record_length, self.n_channels_enabled)
             acq_product.data[...] = data
+
+        if self._timestamps_enabled:
+            # calculate timestamps
+            acq_product.timestamps = self._buffers_acquired \
+                * self._buffer_period + self._base_timestamps
 
         self._buffers_acquired += 1
 

@@ -4,18 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dirigo_ni_digitizer"
-version = "0.1.0"
+version = "0.1.1"
 description = "Plugin to use NI S- and X-series devices as digitizers in Dirigo."
 authors = [
     {name = "T. D. Weber", email = "tweber@mit.edu"},
 ]
 license = {text = "MIT"}
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 classifiers = [
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.10",
-  "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "License :: OSI Approved :: MIT License",
