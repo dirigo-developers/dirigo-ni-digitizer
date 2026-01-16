@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dirigo_ni_digitizer"
-version = "0.1.1"
+version = "0.1.2"
 description = "Plugin to use NI S- and X-series devices as digitizers in Dirigo."
 authors = [
     {name = "T. D. Weber", email = "tweber@mit.edu"},
@@ -30,5 +30,5 @@ urls = {"Homepage" = "https://github.com/dirigo-developers/dirigo-ni-digitizer"}
 ni = "dirigo_ni_digitizer:NIDigitizer"
 
 # New format:
-# [project.entry-points."dirigo.devices.digitizers"]
-# ni = "dirigo_ni_digitizer:NIDigitizer"
+[project.entry-points."dirigo.devices.digitizer"]
+ni = "dirigo_ni_digitizer:NIDigitizer"
